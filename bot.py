@@ -170,17 +170,31 @@ async def on_reaction_add(reaction, user):
     if str(reaction.emoji) != "🔼":
         return
     auction = active_auctions[reaction.message.id]
+
+    # Don't allow the current leader to outbid themselves
+    if auction.get("leader_id") == user.id:
+        try:
+            await reaction.remove(user)
+        except discord.errors.Forbidden:
+            pass
+        return
+
     new_price = auction["price"] + auction["increment"]
     auction["price"] = new_price
     auction["leader_id"] = user.id
     auction["leader_name"] = user.display_name
+
     embed = reaction.message.embeds[0]
     embed.set_field_at(0, name="Aktualna cena", value=f"{new_price:.2f} zł", inline=False)
     embed.set_footer(text=f"Najwyższa oferta: {user.display_name}")
     await reaction.message.edit(embed=embed)
     write_auction_html(auction)
     await reaction.message.channel.send(f"{user.mention} podbija cenę do {new_price:.2f} zł!")
-    await reaction.remove(user)
+
+    try:
+        await reaction.remove(user)
+    except discord.errors.Forbidden:
+        pass
 
 # Komenda do uruchomienia kolejnej pozycji z listy
 @bot.command()
