@@ -27,10 +27,10 @@ Create `auction_items.csv` with columns `title,description,start_price,increment
 You can start the next item from the file using the command:
 
 ```bash
-!start_next
+/start_next
 ```
 
-Run bot commands such as `!ogłoszenie` and `!start_next` only in the channel specified by `COMMAND_CHANNEL_ID`. The created auction threads will appear in the forum channel defined by `FORUM_CHANNEL_ID`.
+Run bot commands such as `/ogłoszenie` and `/start_next` only in the channel specified by `COMMAND_CHANNEL_ID`. The created auction threads will appear in the forum channel defined by `FORUM_CHANNEL_ID`.
 
 Each auction is exported to an HTML file that can be added as a browser source in OBS.
 

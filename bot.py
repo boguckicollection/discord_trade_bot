@@ -2,7 +2,7 @@ import os
 import csv
 import discord
 from discord.ext import commands
-from discord.ui import Modal, TextInput, View, Button
+from discord.ui import Modal, TextInput, View, Button, Select
 from datetime import datetime, timedelta
 import asyncio
 from dotenv import load_dotenv
@@ -11,7 +11,7 @@ load_dotenv()
 
 intents = discord.Intents.default()
 intents.message_content = True
-bot = commands.Bot(command_prefix="!", intents=intents)
+bot = commands.Bot(command_prefix="/", intents=intents)
 
 forum_channel_id = int(os.environ["FORUM_CHANNEL_ID"])
 command_channel_id = os.environ.get("COMMAND_CHANNEL_ID")
@@ -226,7 +226,7 @@ async def ogłoszenie(ctx):
 
     class OgłoszenieView(View):
         @discord.ui.select(placeholder="Wybierz typ ogłoszenia", options=options)
-        async def select_callback(self, select, interaction: discord.Interaction):
+        async def select_callback(self, interaction: discord.Interaction, select: discord.ui.Select):
             if select.values[0] == "licytacja":
                 await interaction.response.send_modal(AuctionModal(author=interaction.user))
             else:
