@@ -1,7 +1,8 @@
 import os
+import csv
 import discord
-from discord.ext import commands, tasks
-from discord.ui import Modal, TextInput, View, Button, Select
+from discord.ext import commands
+from discord.ui import Modal, TextInput, View, Button
 from datetime import datetime, timedelta
 import asyncio
 
@@ -10,6 +11,103 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 
 forum_channel_id = int(os.environ["FORUM_CHANNEL_ID"])
 active_auctions = {}  # message_id: {...}
+html_export_dir = os.environ.get("HTML_EXPORT_DIR", "exports")
+os.makedirs(html_export_dir, exist_ok=True)
+
+auction_queue = []
+items_file = os.environ.get("AUCTION_ITEMS_FILE", "auction_items.csv")
+if os.path.exists(items_file):
+    with open(items_file, newline="", encoding="utf-8") as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            try:
+                auction_queue.append(
+                    {
+                        "title": row["title"],
+                        "description": row.get("description", ""),
+                        "start_price": float(row["start_price"]),
+                        "increment": float(row["increment"]),
+                        "duration": int(row["duration"]),
+                    }
+                )
+            except (KeyError, ValueError):
+                continue
+
+
+def write_auction_html(auction):
+    path = auction.get("html_file")
+    if not path:
+        return
+    leader = auction.get("leader_name") or "Brak ofert"
+    end_iso = auction["end_time"].isoformat()
+    html = f"""
+<html><head><meta charset='utf-8'>
+<style>
+body {{ font-family: Arial, sans-serif; }}
+.price {{ font-size: 48px; color: red; }}
+.flash {{ animation: flash 1s; }}
+@keyframes flash {{ 0% {{opacity:0.5;}} 50% {{opacity:1;}} 100% {{opacity:0.5;}} }}
+</style>
+</head><body>
+<h1>{auction['title']}</h1>
+<p>{auction['description']}</p>
+<div class='price' id='price'>{auction['price']:.2f} zł</div>
+<p>Najwyższa oferta: {leader}</p>
+<p>Koniec licytacji za: <span id='timer'></span></p>
+<script>
+const end = new Date('{end_iso}');
+function tick() {{
+  const now = new Date();
+  const diff = end - now;
+  const m = Math.max(0, Math.floor(diff/60000));
+  const s = Math.max(0, Math.floor((diff%60000)/1000));
+  document.getElementById('timer').textContent = m + 'm ' + s + 's';
+}}
+setInterval(tick,1000);tick();
+document.getElementById('price').classList.add('flash');
+</script>
+</body></html>
+"""
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(html)
+
+
+async def create_auction(author, title, desc, price, increment, minutes):
+    end_time = datetime.utcnow() + timedelta(minutes=minutes)
+
+    embed = discord.Embed(
+        title=f"📈 {title}",
+        description=desc,
+        color=discord.Color.orange(),
+    )
+    embed.add_field(name="Cena początkowa", value=f"{price:.2f} zł")
+    embed.add_field(name="Kwota przebicia", value=f"{increment:.2f} zł")
+    embed.set_footer(text=f"Koniec licytacji za {minutes} minut")
+
+    forum_channel = bot.get_channel(forum_channel_id)
+    if not forum_channel:
+        raise RuntimeError("Nie znaleziono kanału Forum")
+
+    post = await forum_channel.create_thread(name=title, content="Nowa licytacja!", embed=embed)
+    message = await post.send(embed=embed, view=BidButton())
+
+    auction = {
+        "author_id": author.id,
+        "price": price,
+        "increment": increment,
+        "leader_id": None,
+        "leader_name": None,
+        "end_time": end_time,
+        "thread": post,
+        "message": message,
+        "title": title,
+        "description": desc,
+        "html_file": os.path.join(html_export_dir, f"auction_{message.id}.html"),
+    }
+    active_auctions[message.id] = auction
+    write_auction_html(auction)
+    bot.loop.create_task(end_auction_after(message.id, minutes * 60))
+    return message
 
 class AuctionModal(Modal, title="Nowa Licytacja"):
     def __init__(self, author):
@@ -37,40 +135,16 @@ class AuctionModal(Modal, title="Nowa Licytacja"):
             await interaction.response.send_message("Błąd: Cena i czas muszą być liczbami.", ephemeral=True)
             return
 
-        end_time = datetime.utcnow() + timedelta(minutes=minutes)
-
-        embed = discord.Embed(
-            title=f"📈 {self.title_input.value}",
-            description=self.desc_input.value,
-            color=discord.Color.orange()
+        await create_auction(
+            author=self.author,
+            title=self.title_input.value,
+            desc=self.desc_input.value,
+            price=price,
+            increment=increment,
+            minutes=minutes,
         )
-        embed.add_field(name="Cena początkowa", value=f"{price:.2f} zł")
-        embed.add_field(name="Kwota przebicia", value=f"{increment:.2f} zł")
-        embed.set_footer(text=f"Koniec licytacji za {minutes} minut")
-
-        forum_channel = bot.get_channel(forum_channel_id)
-        if not forum_channel:
-            await interaction.response.send_message("Nie znaleziono kanału Forum.", ephemeral=True)
-            return
-
-        post = await forum_channel.create_thread(name=self.title_input.value, content="Nowa licytacja!", embed=embed)
-        message = await post.send(embed=embed, view=BidButton())
-
-        # Zapisz dane licytacji
-        active_auctions[message.id] = {
-            "author_id": self.author.id,
-            "price": price,
-            "increment": increment,
-            "leader_id": None,
-            "end_time": end_time,
-            "thread": post,
-            "message": message
-        }
 
         await interaction.response.send_message("Licytacja utworzona!", ephemeral=True)
-
-        # Automatyczne zakończenie licytacji
-        bot.loop.create_task(end_auction_after(message.id, minutes * 60))
 
 class BidButton(View):
     def __init__(self):
@@ -87,12 +161,14 @@ class BidButton(View):
         new_price = auction["price"] + auction["increment"]
         auction["price"] = new_price
         auction["leader_id"] = interaction.user.id
+        auction["leader_name"] = interaction.user.display_name
 
         embed = interaction.message.embeds[0]
         embed.set_field_at(0, name="Aktualna cena", value=f"{new_price:.2f} zł", inline=False)
         embed.set_footer(text=f"Najwyższa oferta: {interaction.user.display_name}")
 
         await interaction.message.edit(embed=embed, view=self)
+        write_auction_html(auction)
         await interaction.response.send_message(f"✅ Przebiłeś licytację do {new_price:.2f} zł!", ephemeral=True)
 
 async def end_auction_after(message_id, delay):
@@ -107,6 +183,24 @@ async def end_auction_after(message_id, delay):
 
     await thread.send(f"🏁 Licytacja zakończona!\nZwycięzca: {winner}\nKońcowa cena: {final_price}")
     await thread.edit(archived=True, locked=True)
+    write_auction_html(auction)
+
+# Komenda do uruchomienia kolejnej pozycji z listy
+@bot.command()
+async def start_next(ctx):
+    if not auction_queue:
+        await ctx.send("Brak kolejnych kart w pliku.")
+        return
+    item = auction_queue.pop(0)
+    await create_auction(
+        author=ctx.author,
+        title=item["title"],
+        desc=item["description"],
+        price=item["start_price"],
+        increment=item["increment"],
+        minutes=item["duration"],
+    )
+    await ctx.send(f"Licytacja '{item['title']}' rozpoczęta.")
 
 # Komenda do uruchomienia ogłoszenia
 @bot.command()
