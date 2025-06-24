@@ -50,6 +50,7 @@ async def create_auction(author, title, desc, price, increment, minutes, image_u
     )
     embed.add_field(name="Cena początkowa", value=f"{price:.2f} zł")
     embed.add_field(name="Kwota przebicia", value=f"{increment:.2f} zł")
+    embed.add_field(name="Liczba przebić", value="0", inline=False)
     if image_url:
         embed.set_image(url=image_url)
     embed.set_footer(text=f"Koniec licytacji za {minutes} minut")
@@ -79,6 +80,7 @@ async def create_auction(author, title, desc, price, increment, minutes, image_u
         "author_id": author.id,
         "price": price,
         "increment": increment,
+        "bid_count": 0,
         "leader_id": None,
         "leader_name": None,
         "end_time": end_time,
@@ -171,14 +173,7 @@ async def on_reaction_add(reaction, user):
         return
     auction = active_auctions[reaction.message.id]
 
-    # Don't allow the current leader to outbid themselves
-    if auction.get("leader_id") == user.id:
-        try:
-            await reaction.remove(user)
-        except discord.errors.Forbidden:
-            pass
-        return
-
+    auction["bid_count"] = auction.get("bid_count", 0) + 1
     new_price = auction["price"] + auction["increment"]
     auction["price"] = new_price
     auction["leader_id"] = user.id
@@ -186,6 +181,8 @@ async def on_reaction_add(reaction, user):
 
     embed = reaction.message.embeds[0]
     embed.set_field_at(0, name="Aktualna cena", value=f"{new_price:.2f} zł", inline=False)
+    if len(embed.fields) > 2:
+        embed.set_field_at(2, name="Liczba przebić", value=str(auction["bid_count"]), inline=False)
     embed.set_footer(text=f"Najwyższa oferta: {user.display_name}")
     await reaction.message.edit(embed=embed)
     write_auction_html(auction)
