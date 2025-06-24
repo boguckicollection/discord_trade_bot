@@ -32,6 +32,7 @@ body {{ font-family: Arial, sans-serif; }}
 {img_html}
 <div class='price' id='price'>{auction['price']:.2f} zł</div>
 <p>Najwyższa oferta: {leader}</p>
+<p>Liczba przebić: {auction['bid_count']}</p>
 <p>Koniec licytacji za: <span id='timer'></span></p>
 <script>
 const end = new Date('{end_iso}');
