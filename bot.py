@@ -95,7 +95,15 @@ async def create_auction(author, title, desc, price, increment, minutes):
     if not forum_channel:
         raise RuntimeError("Nie znaleziono kanału Forum")
 
-    post = await forum_channel.create_thread(name=title, content="Nowa licytacja!", embed=embed)
+    thread_kwargs = {
+        "name": title,
+        "content": "Nowa licytacja!",
+        "embed": embed,
+    }
+    if forum_channel.available_tags:
+        thread_kwargs["applied_tags"] = [forum_channel.available_tags[0]]
+
+    post = await forum_channel.create_thread(**thread_kwargs)
     message = await post.send(embed=embed, view=BidButton())
 
     auction = {
