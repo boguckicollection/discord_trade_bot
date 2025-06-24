@@ -14,6 +14,7 @@ Simple Discord bot to handle auctions via forum threads.
    - `FORUM_CHANNEL_ID` - ID of the forum channel for auctions.
    - `COMMAND_CHANNEL_ID` - ID of the text channel used to invoke bot commands.
    - `HTML_EXPORT_DIR` - directory where auction HTML files will be saved (default `exports`).
+   - `ENABLE_STREAMING` - set to `0` to disable exporting HTML overlays.
    - `AUCTION_ITEMS_FILE` - CSV file with predefined auction items (default `auction_items.csv`).
 
 3. Run the bot:
