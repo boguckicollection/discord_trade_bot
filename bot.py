@@ -1,3 +1,4 @@
+import os
 import discord
 from discord.ext import commands, tasks
 from discord.ui import Modal, TextInput, View, Button, Select
@@ -7,7 +8,7 @@ import asyncio
 intents = discord.Intents.default()
 bot = commands.Bot(command_prefix="!", intents=intents)
 
-forum_channel_id = 123456789012345678  # Zmień na ID Twojego kanału-forum
+forum_channel_id = int(os.environ["FORUM_CHANNEL_ID"])
 active_auctions = {}  # message_id: {...}
 
 class AuctionModal(Modal, title="Nowa Licytacja"):
@@ -127,4 +128,4 @@ async def ogłoszenie(ctx):
 
     await ctx.send("Wybierz typ ogłoszenia:", view=OgłoszenieView())
 
-bot.run("YOUR_TOKEN")
+bot.run(os.environ["DISCORD_TOKEN"])
