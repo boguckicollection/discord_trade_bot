@@ -2,10 +2,11 @@ import os
 import csv
 import discord
 from discord.ext import commands
-from discord.ui import Modal, TextInput, View, Button, Select
+from discord.ui import Modal, TextInput, View, Select
 from datetime import datetime, timedelta
 import asyncio
 from dotenv import load_dotenv
+from streaming import write_auction_html, STREAMING_ENABLED, html_export_dir
 
 load_dotenv()
 
@@ -18,8 +19,6 @@ command_channel_id = os.environ.get("COMMAND_CHANNEL_ID")
 if command_channel_id:
     command_channel_id = int(command_channel_id)
 active_auctions = {}  # message_id: {...}
-html_export_dir = os.environ.get("HTML_EXPORT_DIR", "exports")
-os.makedirs(html_export_dir, exist_ok=True)
 
 auction_queue = []
 items_file = os.environ.get("AUCTION_ITEMS_FILE", "auction_items.csv")
@@ -39,46 +38,6 @@ if os.path.exists(items_file):
                 )
             except (KeyError, ValueError):
                 continue
-
-
-def write_auction_html(auction):
-    path = auction.get("html_file")
-    if not path:
-        return
-    leader = auction.get("leader_name") or "Brak ofert"
-    end_iso = auction["end_time"].isoformat()
-    img_html = f"<img src='{auction['image_url']}' style='max-width:100%'>" if auction.get('image_url') else ""
-    html = f"""
-<html><head><meta charset='utf-8'>
-<style>
-body {{ font-family: Arial, sans-serif; }}
-.price {{ font-size: 48px; color: red; }}
-.flash {{ animation: flash 1s; }}
-@keyframes flash {{ 0% {{opacity:0.5;}} 50% {{opacity:1;}} 100% {{opacity:0.5;}} }}
-</style>
-</head><body>
-<h1>{auction['title']}</h1>
-<p>{auction['description']}</p>
-{img_html}
-<div class='price' id='price'>{auction['price']:.2f} zł</div>
-<p>Najwyższa oferta: {leader}</p>
-<p>Koniec licytacji za: <span id='timer'></span></p>
-<script>
-const end = new Date('{end_iso}');
-function tick() {{
-  const now = new Date();
-  const diff = end - now;
-  const m = Math.max(0, Math.floor(diff/60000));
-  const s = Math.max(0, Math.floor((diff%60000)/1000));
-  document.getElementById('timer').textContent = m + 'm ' + s + 's';
-}}
-setInterval(tick,1000);tick();
-document.getElementById('price').classList.add('flash');
-</script>
-</body></html>
-"""
-    with open(path, "w", encoding="utf-8") as f:
-        f.write(html)
 
 
 async def create_auction(author, title, desc, price, increment, minutes, image_url=None):
@@ -108,7 +67,8 @@ async def create_auction(author, title, desc, price, increment, minutes, image_u
         thread_kwargs["applied_tags"] = [forum_channel.available_tags[0]]
 
     post = await forum_channel.create_thread(**thread_kwargs)
-    message = await post.send(embed=embed, view=BidButton())
+    message = await post.send(embed=embed)
+    await message.add_reaction("🔼")
 
     auction = {
         "author_id": author.id,
@@ -121,7 +81,7 @@ async def create_auction(author, title, desc, price, increment, minutes, image_u
         "message": message,
         "title": title,
         "description": desc,
-        "html_file": os.path.join(html_export_dir, f"auction_{message.id}.html"),
+        "html_file": os.path.join(html_export_dir, f"auction_{message.id}.html") if STREAMING_ENABLED else None,
         "image_url": image_url,
     }
     active_auctions[message.id] = auction
@@ -183,43 +143,39 @@ class AuctionModal(Modal, title="Nowa Licytacja"):
 
         await interaction.followup.send("Licytacja utworzona!", ephemeral=True)
 
-class BidButton(View):
-    def __init__(self):
-        super().__init__(timeout=None)
-
-    @discord.ui.button(label="🔼 Przebij", style=discord.ButtonStyle.green, custom_id="bid")
-    async def bid(self, interaction: discord.Interaction, button: Button):
-        auction = active_auctions.get(interaction.message.id)
-        if not auction:
-            await interaction.response.send_message("Licytacja zakończona lub nieznaleziona.", ephemeral=True)
-            return
-
-        new_price = auction["price"] + auction["increment"]
-        auction["price"] = new_price
-        auction["leader_id"] = interaction.user.id
-        auction["leader_name"] = interaction.user.display_name
-
-        embed = interaction.message.embeds[0]
-        embed.set_field_at(0, name="Aktualna cena", value=f"{new_price:.2f} zł", inline=False)
-        embed.set_footer(text=f"Najwyższa oferta: {interaction.user.display_name}")
-
-        await interaction.message.edit(embed=embed, view=self)
-        write_auction_html(auction)
-        await interaction.response.send_message(f"✅ Przebiłeś licytację do {new_price:.2f} zł!", ephemeral=True)
 
 async def end_auction_after(message_id, delay):
     await asyncio.sleep(delay)
     auction = active_auctions.pop(message_id, None)
     if not auction:
         return
-
     thread = auction["thread"]
     winner = f"<@{auction['leader_id']}>" if auction["leader_id"] else "Brak ofert"
     final_price = f"{auction['price']:.2f} zł"
-
     await thread.send(f"🏁 Licytacja zakończona!\nZwycięzca: {winner}\nKońcowa cena: {final_price}")
     await thread.edit(archived=True, locked=True)
     write_auction_html(auction)
+
+@bot.event
+async def on_reaction_add(reaction, user):
+    if user.bot:
+        return
+    if reaction.message.id not in active_auctions:
+        return
+    if str(reaction.emoji) != "🔼":
+        return
+    auction = active_auctions[reaction.message.id]
+    new_price = auction["price"] + auction["increment"]
+    auction["price"] = new_price
+    auction["leader_id"] = user.id
+    auction["leader_name"] = user.display_name
+    embed = reaction.message.embeds[0]
+    embed.set_field_at(0, name="Aktualna cena", value=f"{new_price:.2f} zł", inline=False)
+    embed.set_footer(text=f"Najwyższa oferta: {user.display_name}")
+    await reaction.message.edit(embed=embed)
+    write_auction_html(auction)
+    await reaction.message.channel.send(f"{user.mention} podbija cenę do {new_price:.2f} zł!")
+    await reaction.remove(user)
 
 # Komenda do uruchomienia kolejnej pozycji z listy
 @bot.command()
