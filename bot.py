@@ -10,6 +10,9 @@ intents = discord.Intents.default()
 bot = commands.Bot(command_prefix="!", intents=intents)
 
 forum_channel_id = int(os.environ["FORUM_CHANNEL_ID"])
+command_channel_id = os.environ.get("COMMAND_CHANNEL_ID")
+if command_channel_id:
+    command_channel_id = int(command_channel_id)
 active_auctions = {}  # message_id: {...}
 html_export_dir = os.environ.get("HTML_EXPORT_DIR", "exports")
 os.makedirs(html_export_dir, exist_ok=True)
@@ -188,6 +191,9 @@ async def end_auction_after(message_id, delay):
 # Komenda do uruchomienia kolejnej pozycji z listy
 @bot.command()
 async def start_next(ctx):
+    if command_channel_id and ctx.channel.id != command_channel_id:
+        await ctx.send(f"Ta komenda jest dostępna tylko na kanale <#{command_channel_id}>.")
+        return
     if not auction_queue:
         await ctx.send("Brak kolejnych kart w pliku.")
         return
@@ -205,6 +211,9 @@ async def start_next(ctx):
 # Komenda do uruchomienia ogłoszenia
 @bot.command()
 async def ogłoszenie(ctx):
+    if command_channel_id and ctx.channel.id != command_channel_id:
+        await ctx.send(f"Ta komenda jest dostępna tylko na kanale <#{command_channel_id}>.")
+        return
     options = [
         discord.SelectOption(label="Licytacja", value="licytacja", emoji="📈"),
         discord.SelectOption(label="Sprzedaż", value="sprzedaz", emoji="💰"),
