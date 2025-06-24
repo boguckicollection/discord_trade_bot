@@ -10,6 +10,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 intents = discord.Intents.default()
+intents.message_content = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 
 forum_channel_id = int(os.environ["FORUM_CHANNEL_ID"])
@@ -155,7 +156,6 @@ class AuctionModal(Modal, title="Nowa Licytacja"):
 class BidButton(View):
     def __init__(self):
         super().__init__(timeout=None)
-        self.add_item(Button(label="🔼 Przebij", custom_id="bid"))
 
     @discord.ui.button(label="🔼 Przebij", style=discord.ButtonStyle.green, custom_id="bid")
     async def bid(self, interaction: discord.Interaction, button: Button):
