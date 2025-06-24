@@ -67,7 +67,12 @@ async def create_auction(author, title, desc, price, increment, minutes, image_u
         thread_kwargs["applied_tags"] = [forum_channel.available_tags[0]]
 
     post = await forum_channel.create_thread(**thread_kwargs)
-    message = await post.send(embed=embed)
+    # discord.py 2.3+ returns a ThreadWithMessage when creating a forum thread
+    if hasattr(post, "message"):
+        message = post.message
+        post = post.thread
+    else:
+        message = await post.send(embed=embed)
     await message.add_reaction("🔼")
 
     auction = {
