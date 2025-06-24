@@ -30,3 +30,5 @@ You can start the next item from the file using the command:
 ```
 
 Each auction is exported to an HTML file that can be added as a browser source in OBS.
+
+A sample overlay file `overlay.html` is provided. It fetches live auction data from `auction_data.json` for use as a browser source in OBS.
