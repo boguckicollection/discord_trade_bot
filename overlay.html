@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+  <meta charset="UTF-8">
+  <title>Aukcja Pokémon</title>
+  <style>
+    body {
+      margin: 0;
+      font-family: sans-serif;
+      background: transparent;
+      color: white;
+      text-align: center;
+    }
+    #container {
+      padding: 20px;
+      background: rgba(0, 0, 0, 0.7);
+      border-radius: 16px;
+      display: inline-block;
+      animation: fadeIn 1s ease-in;
+    }
+    h1 {
+      font-size: 36px;
+      margin-bottom: 10px;
+    }
+    .price {
+      font-size: 48px;
+      color: gold;
+      transition: transform 0.4s ease;
+    }
+    .price.animate {
+      transform: scale(1.2);
+    }
+    .info {
+      font-size: 18px;
+      margin-top: 5px;
+    }
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(-20px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+  </style>
+</head>
+<body>
+  <div id="container">
+    <h1 id="title">Ładowanie...</h1>
+    <div class="price" id="price">-- zł</div>
+    <div class="info" id="time">Pozostały czas: --:--</div>
+    <div class="info" id="bidder">Najwyższa oferta: --</div>
+  </div>
+
+  <script>
+    let lastPrice = null;
+
+    async function updateOverlay() {
+      try {
+        const response = await fetch("auction_data.json?ts=" + new Date().getTime());
+        const data = await response.json();
+
+        document.getElementById("title").textContent = data.title;
+        document.getElementById("time").textContent = `Pozostały czas: ${data.time_left}`;
+        document.getElementById("bidder").textContent = `Najwyższa oferta: ${data.highest_bidder}`;
+        
+        const priceEl = document.getElementById("price");
+        if (lastPrice !== data.price) {
+          priceEl.classList.remove("animate");
+          void priceEl.offsetWidth; // reset animation
+          priceEl.textContent = `${data.price} zł`;
+          priceEl.classList.add("animate");
+          lastPrice = data.price;
+        }
+      } catch (err) {
+        console.error("Nie można załadować danych:", err);
+      }
+    }
+
+    setInterval(updateOverlay, 1000);
+  </script>
+</body>
+</html>
