@@ -47,6 +47,7 @@ def write_auction_html(auction):
         return
     leader = auction.get("leader_name") or "Brak ofert"
     end_iso = auction["end_time"].isoformat()
+    img_html = f"<img src='{auction['image_url']}' style='max-width:100%'>" if auction.get('image_url') else ""
     html = f"""
 <html><head><meta charset='utf-8'>
 <style>
@@ -58,6 +59,7 @@ body {{ font-family: Arial, sans-serif; }}
 </head><body>
 <h1>{auction['title']}</h1>
 <p>{auction['description']}</p>
+{img_html}
 <div class='price' id='price'>{auction['price']:.2f} zł</div>
 <p>Najwyższa oferta: {leader}</p>
 <p>Koniec licytacji za: <span id='timer'></span></p>
@@ -79,7 +81,7 @@ document.getElementById('price').classList.add('flash');
         f.write(html)
 
 
-async def create_auction(author, title, desc, price, increment, minutes):
+async def create_auction(author, title, desc, price, increment, minutes, image_url=None):
     end_time = datetime.utcnow() + timedelta(minutes=minutes)
 
     embed = discord.Embed(
@@ -89,6 +91,8 @@ async def create_auction(author, title, desc, price, increment, minutes):
     )
     embed.add_field(name="Cena początkowa", value=f"{price:.2f} zł")
     embed.add_field(name="Kwota przebicia", value=f"{increment:.2f} zł")
+    if image_url:
+        embed.set_image(url=image_url)
     embed.set_footer(text=f"Koniec licytacji za {minutes} minut")
 
     forum_channel = bot.get_channel(forum_channel_id)
@@ -118,6 +122,7 @@ async def create_auction(author, title, desc, price, increment, minutes):
         "title": title,
         "description": desc,
         "html_file": os.path.join(html_export_dir, f"auction_{message.id}.html"),
+        "image_url": image_url,
     }
     active_auctions[message.id] = auction
     write_auction_html(auction)
@@ -149,6 +154,22 @@ class AuctionModal(Modal, title="Nowa Licytacja"):
         except ValueError:
             await interaction.response.send_message("Błąd: Cena i czas muszą być liczbami.", ephemeral=True)
             return
+        await interaction.response.send_message("Prześlij teraz zdjęcie lub wpisz 'pomiń'", ephemeral=True)
+
+        def check(msg: discord.Message):
+            return msg.author.id == interaction.user.id and msg.channel == interaction.channel
+
+        image_url = None
+        try:
+            msg = await bot.wait_for("message", check=check, timeout=120)
+            if msg.attachments:
+                image_url = msg.attachments[0].url
+            elif msg.content.lower().strip() == "pomiń":
+                image_url = None
+            else:
+                image_url = None
+        except asyncio.TimeoutError:
+            pass
 
         await create_auction(
             author=self.author,
@@ -157,9 +178,10 @@ class AuctionModal(Modal, title="Nowa Licytacja"):
             price=price,
             increment=increment,
             minutes=minutes,
+            image_url=image_url,
         )
 
-        await interaction.response.send_message("Licytacja utworzona!", ephemeral=True)
+        await interaction.followup.send("Licytacja utworzona!", ephemeral=True)
 
 class BidButton(View):
     def __init__(self):
@@ -216,6 +238,7 @@ async def start_next(ctx):
         price=item["start_price"],
         increment=item["increment"],
         minutes=item["duration"],
+        image_url=None,
     )
     await ctx.send(f"Licytacja '{item['title']}' rozpoczęta.")
 
